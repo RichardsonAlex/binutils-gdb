@@ -495,6 +495,7 @@ ALL_64_EMULATION_SOURCES = \
 	eelf64bmip.c \
 	eelf64btsmip.c \
 	eelf64btsmip_fbsd.c \
+	eelf64btsmip_cheri_fbsd.c \
 	eelf64hppa.c \
 	eelf64lppc.c \
 	eelf64lriscv.c \
@@ -1964,6 +1965,11 @@ eelf64btsmip.c: $(srcdir)/emulparams/elf64btsmip.sh \
   $(srcdir)/emultempl/mipself.em $(srcdir)/scripttempl/elf.sc ${GEN_DEPENDS}
 
 eelf64btsmip_fbsd.c: $(srcdir)/emulparams/elf64btsmip_fbsd.sh \
+  $(srcdir)/emulparams/elf64bmip-defs.sh \
+  $(srcdir)/emulparams/elf32bmipn32-defs.sh $(ELF_DEPS) \
+  $(srcdir)/emultempl/mipself.em $(srcdir)/scripttempl/elf.sc ${GEN_DEPENDS}
+
+eelf64btsmip_cheri_fbsd.c: $(srcdir)/emulparams/elf64btsmip_cheri_fbsd.sh \
   $(srcdir)/emulparams/elf64bmip-defs.sh \
   $(srcdir)/emulparams/elf32bmipn32-defs.sh $(ELF_DEPS) \
   $(srcdir)/emultempl/mipself.em $(srcdir)/scripttempl/elf.sc ${GEN_DEPENDS}
