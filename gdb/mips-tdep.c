@@ -67,7 +67,8 @@ static struct type *mips_register_type (struct gdbarch *gdbarch, int regnum);
 
 static int mips32_instruction_has_delay_slot (struct gdbarch *gdbarch,
 					      ULONGEST inst);
-static int micromips_instruction_has_delay_slot (ULONGEST insn, int mustbe32);
+static int micromips_instruction_has_delay_slot (struct gdbarch *gdbarch,
+						 ULONGEST insn, int mustbe32);
 static int mips16_instruction_has_delay_slot (unsigned short inst,
 					      int mustbe32);
 
@@ -1710,7 +1711,11 @@ mips32_next_pc (struct regcache *regcache, CORE_ADDR pc)
 	       && (itype_rt (inst) & 2) == 0)
 	/* BC1ANY4F, BC1ANY4T: 010001 01010 xxx0x */
 	pc = mips32_bc1_pc (gdbarch, regcache, inst, pc + 4, 4);
-      else if (op == 29)
+      /*
+       * XXXAR: On CHERI the JALX opcode is used for clcbi (load cap big
+       * immediate) so instruction is pc + 4
+       */
+      else if (op == 29 && !is_cheri (gdbarch))
 	/* JALX: 011101 */
 	/* The new PC will be alternate mode.  */
 	{
@@ -2115,6 +2120,7 @@ micromips_next_pc (struct regcache *regcache, CORE_ADDR pc)
 	  break;
 
 	case 0x3c: /* JALX: bits 111100 */
+            gdb_assert (!is_cheri (gdbarch) && "JALX not supported on CHERI");
 	    pc = ((pc | 0xfffffff) ^ 0xfffffff) | (b0s26_imm (insn) << 2);
 	  break;
 	}
@@ -3229,7 +3235,7 @@ micromips_scan_prologue (struct gdbarch *gdbarch,
 	    default:
 	      /* The instruction in the delay slot can be a part
 	         of the prologue, so move forward once more.  */
-	      if (micromips_instruction_has_delay_slot (insn, 0))
+	      if (micromips_instruction_has_delay_slot (gdbarch, insn, 0))
 		in_delay_slot = 1;
 	      else
 		this_non_prologue_insn = 1;
@@ -3289,7 +3295,7 @@ micromips_scan_prologue (struct gdbarch *gdbarch,
 	    default:
 	      /* The instruction in the delay slot can be a part
 	         of the prologue, so move forward once more.  */
-	      if (micromips_instruction_has_delay_slot (insn << 16, 0))
+	      if (micromips_instruction_has_delay_slot (gdbarch, insn << 16, 0))
 		in_delay_slot = 1;
 	      else
 		this_non_prologue_insn = 1;
@@ -7551,7 +7557,8 @@ mips32_instruction_has_delay_slot (struct gdbarch *gdbarch, ULONGEST inst)
       return (is_octeon_bbit_op (op, gdbarch)
 	      || is_cheri_branch_op (inst, gdbarch)
 	      || op >> 2 == 5	/* BEQL, BNEL, BLEZL, BGTZL: bits 0101xx  */
-	      || op == 29	/* JALX: bits 011101  */
+	      /* XXXAR: CHERI uses the jalx opcode for clcbi */
+	      || (op == 29 && !is_cheri (gdbarch))	/* JALX: bits 011101  */
 	      || (op == 17
 		  && (rs == 8
 				/* BC1F, BC1FL, BC1T, BC1TL: 010001 01000  */
@@ -7606,7 +7613,7 @@ mips32_insn_at_pc_has_delay_slot (struct gdbarch *gdbarch, CORE_ADDR addr)
    MUSTBE32 is set or can be any instruction otherwise.  */
 
 static int
-micromips_instruction_has_delay_slot (ULONGEST insn, int mustbe32)
+micromips_instruction_has_delay_slot (struct gdbarch *gdbarch, ULONGEST insn, int mustbe32)
 {
   ULONGEST major = insn >> 16;
 
@@ -7624,8 +7631,9 @@ micromips_instruction_has_delay_slot (ULONGEST insn, int mustbe32)
 		  || (b5s5_op (major) & 0x1e) == 0xe)));
 				/* JALR16, JALRS16: bits 010001 0111x */
     /* 32-bit instructions.  */
-    case 0x3d:			/* JAL: bits 111101 */
     case 0x3c:			/* JALX: bits 111100 */
+        return !is_cheri(gdbarch);
+    case 0x3d:			/* JAL: bits 111101 */
     case 0x35:			/* J: bits 110101 */
     case 0x2d:			/* BNE: bits 101101 */
     case 0x25:			/* BEQ: bits 100101 */
@@ -7684,7 +7692,7 @@ micromips_insn_at_pc_has_delay_slot (struct gdbarch *gdbarch,
 	return 0;
     }
 
-  return micromips_instruction_has_delay_slot (insn, mustbe32);
+  return micromips_instruction_has_delay_slot (gdbarch, insn, mustbe32);
 }
 
 /* Return non-zero if the MIPS16 instruction INST, which must be
